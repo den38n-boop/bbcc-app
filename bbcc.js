@@ -106,8 +106,30 @@
     desiredWeeklyGain: "0.30"
   };
 
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAwOTswFkzVCXlpuCFFV_iRuu7xmXOFFIU",
+    authDomain: "notes-work-27533.firebaseapp.com",
+    projectId: "notes-work-27533",
+    storageBucket: "notes-work-27533.firebasestorage.app",
+    messagingSenderId: "741392232442",
+    appId: "1:741392232442:web:7d4755937a03fbd2a2fe43",
+    measurementId: "G-QM6QXLQGL4"
+  };
+
   let calOpenFor = null;
   let calCursor = today().slice(0, 7);
+  let cloudSaveTimer = null;
+  let fb = {
+    ready: false,
+    loading: true,
+    error: "",
+    app: null,
+    auth: null,
+    db: null,
+    user: null,
+    modules: {},
+    loadingFromCloud: false
+  };
   let state = initState();
 
   function initState() {
@@ -157,27 +179,29 @@
     }
   }
 
+  function getPersistedState() {
+    return {
+      logs: state.logs,
+      drafts: state.drafts,
+      bodyWeights: state.bodyWeights,
+      measurements: state.measurements,
+      nutrition: state.nutrition,
+      settings: state.settings,
+      ui: {
+        tab: state.tab,
+        dayId: state.dayId,
+        date: state.date,
+        bodyWeight: state.bodyWeight,
+        statExercise: state.statExercise,
+        weightEntry: state.weightEntry,
+        measureEntry: state.measureEntry
+      }
+    };
+  }
+
   function save() {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        logs: state.logs,
-        drafts: state.drafts,
-        bodyWeights: state.bodyWeights,
-        measurements: state.measurements,
-        nutrition: state.nutrition,
-        settings: state.settings,
-        ui: {
-          tab: state.tab,
-          dayId: state.dayId,
-          date: state.date,
-          bodyWeight: state.bodyWeight,
-          statExercise: state.statExercise,
-          weightEntry: state.weightEntry,
-          measureEntry: state.measureEntry
-        }
-      })
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getPersistedState()));
+    if (fb.user && !fb.loadingFromCloud) queueCloudSave();
   }
 
   function n(v) {
@@ -297,6 +321,121 @@
       ? state.bodyWeights.map((r) => (r.date === date ? Object.assign({}, r, { weight, note }) : r))
       : state.bodyWeights.concat({ id: uid(), date, weight, note });
   }
+
+  async function initFirebase() {
+    try {
+      const appModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js");
+      const authModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js");
+      const firestoreModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js");
+
+      fb.app = appModule.initializeApp(FIREBASE_CONFIG);
+      fb.auth = authModule.getAuth(fb.app);
+      fb.db = firestoreModule.getFirestore(fb.app);
+      fb.modules = { ...authModule, ...firestoreModule };
+      fb.ready = true;
+      fb.loading = false;
+
+      authModule.onAuthStateChanged(fb.auth, async (user) => {
+        fb.user = user;
+        if (user) await loadCloudState();
+        save();
+        render();
+      });
+    } catch (error) {
+      fb.ready = false;
+      fb.loading = false;
+      fb.error = error.message || "Firebase не загрузился";
+      render();
+    }
+  }
+
+  function cloudDocRef() {
+    return fb.modules.doc(fb.db, "users", fb.user.uid, "app", "state");
+  }
+
+  function queueCloudSave() {
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(saveCloudState, 700);
+  }
+
+  async function saveCloudState() {
+    if (!fb.user || !fb.db) return;
+    try {
+      await fb.modules.setDoc(
+        cloudDocRef(),
+        {
+          state: getPersistedState(),
+          updatedAt: fb.modules.serverTimestamp(),
+          userEmail: fb.user.email || ""
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.warn("BBCC cloud save error:", error);
+    }
+  }
+
+  async function loadCloudState() {
+    if (!fb.user || !fb.db) return;
+    try {
+      fb.loadingFromCloud = true;
+      const snap = await fb.modules.getDoc(cloudDocRef());
+      if (snap.exists() && snap.data().state) {
+        const remote = snap.data().state;
+        state.logs = remote.logs || state.logs;
+        state.drafts = remote.drafts || state.drafts;
+        state.bodyWeights = remote.bodyWeights || state.bodyWeights;
+        state.measurements = remote.measurements || state.measurements;
+        state.nutrition = remote.nutrition || state.nutrition;
+        state.settings = Object.assign({}, DEFAULT_SETTINGS, remote.settings || state.settings);
+        if (remote.ui) {
+          state.dayId = remote.ui.dayId || state.dayId;
+          state.date = remote.ui.date || state.date;
+          state.bodyWeight = remote.ui.bodyWeight || "";
+          state.statExercise = remote.ui.statExercise || state.statExercise;
+          state.weightEntry = remote.ui.weightEntry || state.weightEntry;
+          state.measureEntry = remote.ui.measureEntry || state.measureEntry;
+        }
+      } else {
+        await saveCloudState();
+      }
+      fb.loadingFromCloud = false;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(getPersistedState()));
+    } catch (error) {
+      fb.loadingFromCloud = false;
+      console.warn("BBCC cloud load error:", error);
+    }
+  }
+
+  window.bbLoginGoogle = async () => {
+    try {
+      const provider = new fb.modules.GoogleAuthProvider();
+      await fb.modules.signInWithPopup(fb.auth, provider);
+    } catch (error) {
+      alert(error.message || "Не получилось войти через Google");
+    }
+  };
+
+  window.bbLoginEmail = async (mode) => {
+    const email = document.getElementById("bb-auth-email")?.value.trim();
+    const password = document.getElementById("bb-auth-password")?.value;
+    if (!email || !password) return alert("Введи email и пароль");
+    try {
+      if (mode === "register") {
+        await fb.modules.createUserWithEmailAndPassword(fb.auth, email, password);
+      } else {
+        await fb.modules.signInWithEmailAndPassword(fb.auth, email, password);
+      }
+    } catch (error) {
+      alert(error.message || "Не получилось войти");
+    }
+  };
+
+  window.bbLogout = async () => {
+    if (!fb.auth) return;
+    await saveCloudState();
+    await fb.modules.signOut(fb.auth);
+  };
 
   window.bbSetTab = (tab) => {
     state.tab = tab;
@@ -585,10 +724,20 @@
     return `<div class="bb-grid2">${PROGRAM.map((day) => `<div class="bb-card"><h2 class="bb-section-title">${esc(day.title)}</h2>${day.exercises.map((ex) => `<div class="bb-log-ex" style="margin-bottom:10px;"><b>${esc(ex.name)}</b><div class="bb-muted bb-small">${ex.sets}×${esc(ex.reps)} · отдых ${esc(ex.rest)} · ${esc(ex.group)}</div></div>`).join("")}</div>`).join("")}</div>`;
   }
 
+  function renderAuth() {
+    return `<div class="bb-wrap"><div class="bb-card bb-hero"><div class="bb-title">Bodybuilding Control Center</div><div class="bb-subtitle">Личный кабинет для тренировок, тела и питания. Войди, чтобы данные сохранялись в облаке и не терялись между устройствами.</div></div><div class="bb-card" style="max-width:520px;margin:0 auto;"><h2 class="bb-section-title">Вход</h2>${fb.error ? `<div class="bb-log-ex" style="border-color:#ef4444;color:#fecaca;margin-bottom:12px;">${esc(fb.error)}</div>` : ""}${fb.loading ? `<p class="bb-muted">Загружаю Firebase...</p>` : `<button class="bb-btn bb-primary" style="width:100%;margin-bottom:12px;" onclick="bbLoginGoogle()">Войти через Google</button><div class="bb-field" style="margin-bottom:10px;"><label>Email</label><input id="bb-auth-email" class="bb-input" type="email" placeholder="you@gmail.com"></div><div class="bb-field" style="margin-bottom:12px;"><label>Пароль</label><input id="bb-auth-password" class="bb-input" type="password" placeholder="минимум 6 символов"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="bb-btn bb-primary" onclick="bbLoginEmail('login')">Войти</button><button class="bb-btn" onclick="bbLoginEmail('register')">Создать аккаунт</button></div><p class="bb-muted bb-small" style="margin-top:14px;">Каждый пользователь видит только свои данные. Первые локальные записи после входа будут перенесены в облако.</p>`}</div></div>`;
+  }
+
   function render() {
+    if (!fb.user) {
+      root().innerHTML = renderAuth();
+      markFilledFields();
+      return;
+    }
     const total = sumNutrition();
+    const account = `<div class="bb-actions" style="justify-content:flex-end;margin-top:10px;"><span class="bb-pill">${esc(fb.user.email || "аккаунт")}</span><button class="bb-btn" onclick="bbLogout()">Выйти</button></div>`;
     const body = state.tab === "dashboard" ? renderDashboard() : state.tab === "log" ? renderLog() : state.tab === "body" ? renderBody() : state.tab === "nutrition" ? renderNutrition() : state.tab === "stats" ? renderStats() : state.tab === "history" ? renderHistory() : renderProgram();
-    root().innerHTML = `<div class="bb-wrap"><div class="bb-card bb-hero"><div class="bb-hero-inner"><div><div class="bb-muted bb-small">Тренировки · тело · питание · прогноз</div><div class="bb-title">Bodybuilding Control Center</div><div class="bb-subtitle">Личный дневник под текущую цель: 93 → 100 кг, контроль талии, силовых, питания и прогресса.</div></div><div class="bb-metrics">${metric("вес сейчас", fmt(latestWeight()) + " кг")}${metric("цель", state.settings.goalWeight + " кг")}${metric("тренировок", state.logs.length)}${metric("ккал/день", Math.round(total.kcal))}</div></div></div><div class="bb-tabs">${tabs()}</div>${body}</div>`;
+    root().innerHTML = `<div class="bb-wrap"><div class="bb-card bb-hero"><div class="bb-hero-inner"><div><div class="bb-muted bb-small">Тренировки · тело · питание · прогноз</div><div class="bb-title">Bodybuilding Control Center</div><div class="bb-subtitle">Личный дневник под текущую цель: 93 → 100 кг, контроль талии, силовых, питания и прогресса.</div></div><div class="bb-metrics">${metric("вес сейчас", fmt(latestWeight()) + " кг")}${metric("цель", state.settings.goalWeight + " кг")}${metric("тренировок", state.logs.length)}${metric("ккал/день", Math.round(total.kcal))}</div></div>${account}</div><div class="bb-tabs">${tabs()}</div>${body}</div>`;
     markFilledFields();
   }
 
@@ -667,6 +816,6 @@
     document.head.appendChild(style);
   }
 
+  initFirebase();
   render();
 })();
-
