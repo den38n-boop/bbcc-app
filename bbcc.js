@@ -1,6 +1,7 @@
 (function () {
   const ROOT_ID = "bbcc-app";
   const STORAGE_PREFIX = "bbcc-app-v2-user";
+
   const FIREBASE_CONFIG = {
     apiKey: "AIzaSyAwOTswFkzVCXlpuCFFV_iRuu7xmXOFFIU",
     authDomain: "notes-work-27533.firebaseapp.com",
@@ -81,21 +82,70 @@
   let calCursor = today().slice(0, 7);
   let state = defaultState();
 
-  injectStyles(); ensureRoot(); render(); initFirebase();
+  injectStyles();
+  ensureRoot();
+  render();
+  initFirebase();
 
-  function defaultState() { return { tab: "dashboard", dayId: PROGRAM[0].id, date: today(), bodyWeight: "", statExercise: PROGRAM[0].exercises[0].name, logs: [], drafts: {}, bodyWeights: [], measurements: [], nutrition: clone(DEFAULT_NUTRITION), exerciseLibrary: clone(DEFAULT_EXERCISE_LIBRARY), settings: clone(DEFAULT_SETTINGS), weightEntry: { date: today(), weight: "", note: "" }, measureEntry: Object.assign({ date: today(), note: "" }, emptyMeasurements()), newExercise: { name: "", group: "", sets: "3", reps: "10–15", rest: "60–90 сек", youtube: "", notes: "" } }; }
-  function normalizeState(raw) { const base = defaultState(); const ui = raw.ui || {}; return { ...base, ...raw, settings: { ...base.settings, ...(raw.settings || {}) }, nutrition: Array.isArray(raw.nutrition) ? raw.nutrition : base.nutrition, exerciseLibrary: Array.isArray(raw.exerciseLibrary) ? raw.exerciseLibrary : base.exerciseLibrary, tab: ui.tab || raw.tab || base.tab, dayId: ui.dayId || raw.dayId || base.dayId, date: ui.date || raw.date || base.date, bodyWeight: ui.bodyWeight || raw.bodyWeight || "", statExercise: ui.statExercise || raw.statExercise || base.statExercise, weightEntry: ui.weightEntry || raw.weightEntry || base.weightEntry, measureEntry: ui.measureEntry || raw.measureEntry || base.measureEntry, newExercise: ui.newExercise || raw.newExercise || base.newExercise }; }
-  function getPersistedState() { return { logs: state.logs, drafts: state.drafts, bodyWeights: state.bodyWeights, measurements: state.measurements, nutrition: state.nutrition, exerciseLibrary: state.exerciseLibrary, settings: state.settings, ui: { tab: state.tab, dayId: state.dayId, date: state.date, bodyWeight: state.bodyWeight, statExercise: state.statExercise, weightEntry: state.weightEntry, measureEntry: state.measureEntry, newExercise: state.newExercise } }; }
+  function defaultState() {
+    return { tab: "dashboard", dayId: PROGRAM[0].id, date: today(), bodyWeight: "", statExercise: PROGRAM[0].exercises[0].name, logs: [], drafts: {}, bodyWeights: [], measurements: [], nutrition: clone(DEFAULT_NUTRITION), exerciseLibrary: clone(DEFAULT_EXERCISE_LIBRARY), settings: clone(DEFAULT_SETTINGS), weightEntry: { date: today(), weight: "", note: "" }, measureEntry: Object.assign({ date: today(), note: "" }, emptyMeasurements()), newExercise: { name: "", group: "", sets: "3", reps: "10–15", rest: "60–90 сек", youtube: "", notes: "" } };
+  }
+  function normalizeState(raw) {
+    const base = defaultState();
+    const ui = raw.ui || {};
+    return { ...base, ...raw, settings: { ...base.settings, ...(raw.settings || {}) }, nutrition: Array.isArray(raw.nutrition) ? raw.nutrition : base.nutrition, exerciseLibrary: Array.isArray(raw.exerciseLibrary) ? raw.exerciseLibrary : base.exerciseLibrary, tab: ui.tab || raw.tab || base.tab, dayId: ui.dayId || raw.dayId || base.dayId, date: ui.date || raw.date || base.date, bodyWeight: ui.bodyWeight || raw.bodyWeight || "", statExercise: ui.statExercise || raw.statExercise || base.statExercise, weightEntry: ui.weightEntry || raw.weightEntry || base.weightEntry, measureEntry: ui.measureEntry || raw.measureEntry || base.measureEntry, newExercise: ui.newExercise || raw.newExercise || base.newExercise };
+  }
+  function getPersistedState() {
+    return { logs: state.logs, drafts: state.drafts, bodyWeights: state.bodyWeights, measurements: state.measurements, nutrition: state.nutrition, exerciseLibrary: state.exerciseLibrary, settings: state.settings, ui: { tab: state.tab, dayId: state.dayId, date: state.date, bodyWeight: state.bodyWeight, statExercise: state.statExercise, weightEntry: state.weightEntry, measureEntry: state.measureEntry, newExercise: state.newExercise } };
+  }
   function userStorageKey(uid) { return `${STORAGE_PREFIX}:${uid}`; }
   function loadUserLocal(uid) { try { return JSON.parse(localStorage.getItem(userStorageKey(uid)) || "null"); } catch { return null; } }
   function saveUserLocal() { if (!fb.user) return; localStorage.setItem(userStorageKey(fb.user.uid), JSON.stringify(getPersistedState())); }
   function save() { if (!fb.user) return; saveUserLocal(); queueCloudSave(); }
 
-  async function initFirebase() { try { const appModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js"); const authModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js"); const firestoreModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js"); fb.app = appModule.initializeApp(FIREBASE_CONFIG); fb.auth = authModule.getAuth(fb.app); fb.db = firestoreModule.getFirestore(fb.app); fb.modules = { ...authModule, ...firestoreModule }; fb.loading = false; authModule.onAuthStateChanged(fb.auth, async (user) => { clearTimeout(cloudSaveTimer); fb.user = user; if (!user) { state = defaultState(); render(); return; } await loadUserData(user.uid); render(); }); } catch (error) { fb.loading = false; fb.error = error.message || "Firebase не загрузился"; render(); } }
+  async function initFirebase() {
+    try {
+      const appModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js");
+      const authModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js");
+      const firestoreModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js");
+      fb.app = appModule.initializeApp(FIREBASE_CONFIG);
+      fb.auth = authModule.getAuth(fb.app);
+      fb.db = firestoreModule.getFirestore(fb.app);
+      fb.modules = { ...authModule, ...firestoreModule };
+      fb.loading = false;
+      authModule.onAuthStateChanged(fb.auth, async (user) => {
+        clearTimeout(cloudSaveTimer);
+        fb.user = user;
+        if (!user) { state = defaultState(); render(); return; }
+        await loadUserData(user.uid);
+        render();
+      });
+    } catch (error) {
+      fb.loading = false;
+      fb.error = error.message || "Firebase не загрузился";
+      render();
+    }
+  }
   function cloudDocRef(uid) { return fb.modules.doc(fb.db, "users", uid, "app", "state"); }
-  async function loadUserData(uid) { state = normalizeState(loadUserLocal(uid) || {}); try { const snap = await fb.modules.getDoc(cloudDocRef(uid)); if (snap.exists() && snap.data().state) { state = normalizeState(snap.data().state); saveUserLocal(); } else { await saveCloudState(true); } } catch (error) { console.warn("BBCC cloud load error:", error); } }
+  async function loadUserData(uid) {
+    state = normalizeState(loadUserLocal(uid) || {});
+    try {
+      const snap = await fb.modules.getDoc(cloudDocRef(uid));
+      if (snap.exists() && snap.data().state) {
+        state = normalizeState(snap.data().state);
+        saveUserLocal();
+      } else {
+        await saveCloudState(true);
+      }
+    } catch (error) { console.warn("BBCC cloud load error:", error); }
+  }
   function queueCloudSave() { clearTimeout(cloudSaveTimer); cloudSaveTimer = setTimeout(() => saveCloudState(false), 700); }
-  async function saveCloudState(immediate) { if (!fb.user || !fb.db) return; try { await fb.modules.setDoc(cloudDocRef(fb.user.uid), { state: getPersistedState(), updatedAt: fb.modules.serverTimestamp(), userEmail: fb.user.email || "" }, { merge: true }); } catch (error) { if (immediate) console.warn("BBCC cloud save error:", error); } }
+  async function saveCloudState(immediate) {
+    if (!fb.user || !fb.db) return;
+    try {
+      await fb.modules.setDoc(cloudDocRef(fb.user.uid), { state: getPersistedState(), updatedAt: fb.modules.serverTimestamp(), userEmail: fb.user.email || "" }, { merge: true });
+    } catch (error) { if (immediate) console.warn("BBCC cloud save error:", error); }
+  }
 
   window.bbLoginGoogle = async () => { try { await fb.modules.signInWithPopup(fb.auth, new fb.modules.GoogleAuthProvider()); } catch (error) { alert(error.message || "Не получилось войти через Google"); } };
   window.bbLoginEmail = async (mode) => { const email = document.getElementById("bb-auth-email")?.value.trim(); const password = document.getElementById("bb-auth-password")?.value; if (!email || !password) return alert("Введи email и пароль"); try { if (mode === "register") await fb.modules.createUserWithEmailAndPassword(fb.auth, email, password); else await fb.modules.signInWithEmailAndPassword(fb.auth, email, password); } catch (error) { alert(error.message || "Не получилось войти"); } };
@@ -107,6 +157,8 @@
   window.bbUpdateSet = (exIndex, setIndex, field, value) => { const draft = currentDraft(); draft[exIndex].setsData[setIndex][field] = value; setDraft(draft); markFilledFields(); };
   window.bbAddSet = (exIndex) => { const draft = currentDraft(); draft[exIndex].setsData.push({ weight: "", reps: "", rir: "", note: "" }); setDraft(draft); render(); };
   window.bbRemoveSet = (exIndex, setIndex) => { const draft = currentDraft(); draft[exIndex].setsData.splice(setIndex, 1); setDraft(draft); render(); };
+  window.bbAddExerciseToWorkout = (id) => { const ex = state.exerciseLibrary.find((item) => item.id === id); if (!ex) return; const draft = currentDraft(); const sets = n(ex.sets) || 3; draft.push({ name: ex.name, group: ex.group, sets, reps: ex.reps || "10–15", rest: ex.rest || "60–90 сек", setsData: makeSets(sets) }); setDraft(draft); state.tab = "log"; save(); render(); };
+  window.bbAddSelectedExerciseToWorkout = () => { const select = document.getElementById("bb-workout-exercise-picker"); const id = select && select.value; if (!id) return alert("Выбери упражнение из базы"); window.bbAddExerciseToWorkout(id); };
   window.bbPrefill = () => { const last = state.logs.find((log) => log.dayId === state.dayId); if (!last) return; const draft = currentDraft().map((ex) => { const prev = last.exercises.find((e) => e.name === ex.name); if (!prev) return ex; return { ...ex, setsData: ex.setsData.map((set, i) => ({ ...set, weight: set.weight || prev.setsData[i]?.weight || "", reps: set.reps || prev.setsData[i]?.reps || "" })) }; }); setDraft(draft); render(); };
   window.bbSaveWorkout = () => { const exercises = currentDraft().map((ex) => ({ ...ex, setsData: ex.setsData.filter((s) => s.weight || s.reps || s.rir || s.note) })); state.logs.unshift({ id: uid(), date: state.date, bodyWeight: state.bodyWeight, dayId: state.dayId, dayTitle: currentDay().title, exercises }); if (state.bodyWeight) upsertWeight(state.date, state.bodyWeight, "из тренировки"); delete state.drafts[draftKey()]; state.bodyWeight = ""; state.tab = "history"; save(); render(); };
   window.bbDeleteLog = (id) => { state.logs = state.logs.filter((log) => log.id !== id); save(); render(); };
@@ -115,8 +167,6 @@
   window.bbSetExerciseField = (id, field, value) => { state.exerciseLibrary = state.exerciseLibrary.map((item) => item.id === id ? { ...item, [field]: value } : item); save(); markFilledFields(); };
   window.bbAddExercise = () => { const ex = state.newExercise; if (!String(ex.name || "").trim()) return alert("Введи название упражнения"); state.exerciseLibrary.push({ id: "custom_" + uid(), name: ex.name.trim(), group: ex.group || "Другое", sets: n(ex.sets) || 3, reps: ex.reps || "10–15", rest: ex.rest || "60–90 сек", youtube: ex.youtube || "", notes: ex.notes || "" }); state.newExercise = { name: "", group: "", sets: "3", reps: "10–15", rest: "60–90 сек", youtube: "", notes: "" }; save(); render(); };
   window.bbDeleteExercise = (id) => { if (!confirm("Удалить упражнение из библиотеки?")) return; state.exerciseLibrary = state.exerciseLibrary.filter((item) => item.id !== id); save(); render(); };
-  window.bbAddExerciseToWorkout = (id) => { const ex = state.exerciseLibrary.find((item) => item.id === id); if (!ex) return; const draft = currentDraft(); const sets = n(ex.sets) || 3; draft.push({ name: ex.name, group: ex.group, sets, reps: ex.reps || "10–15", rest: ex.rest || "60–90 сек", setsData: makeSets(sets) }); setDraft(draft); state.tab = "log"; save(); render(); };
-  window.bbAddSelectedExerciseToWorkout = () => { const select = document.getElementById("bb-workout-exercise-picker"); const id = select && select.value; if (!id) return alert("Выбери упражнение из базы"); window.bbAddExerciseToWorkout(id); };
   window.bbSaveWeight = () => { if (!state.weightEntry.weight) return; upsertWeight(state.weightEntry.date, state.weightEntry.weight, state.weightEntry.note); state.weightEntry = { date: addDays(state.weightEntry.date, 1), weight: "", note: "" }; save(); render(); };
   window.bbSaveMeasurements = () => { const exists = state.measurements.some((r) => r.date === state.measureEntry.date); const found = state.measurements.find((r) => r.date === state.measureEntry.date); const payload = { ...state.measureEntry, id: exists ? found.id : uid() }; state.measurements = exists ? state.measurements.map((r) => r.date === payload.date ? payload : r) : state.measurements.concat(payload); save(); render(); };
   window.bbExport = () => { const blob = new Blob([JSON.stringify(getPersistedState(), null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "bbcc-backup-" + today() + ".json"; a.click(); URL.revokeObjectURL(url); };
@@ -161,7 +211,7 @@
   function tabs() { return [["dashboard", "Главная"], ["log", "Тренировка"], ["body", "Анализ тела"], ["nutrition", "Питание"], ["exercises", "Упражнения"], ["stats", "Прогресс"], ["history", "История"], ["program", "План"]].map(([id, label]) => `<button class="bb-tab ${state.tab === id ? "active" : ""}" onclick="bbSetTab('${id}')">${label}</button>`).join(""); }
   function exerciseInfo(name) { return state.exerciseLibrary.find((item) => item.name === name); }
   function techniqueButton(name) { const info = exerciseInfo(name); return info && info.youtube ? `<a class="bb-btn" href="${esc(info.youtube)}" target="_blank" rel="noopener noreferrer">Техника</a>` : ""; }
-  function workoutExercisePicker() { const sortedLib = state.exerciseLibrary.slice().sort((a, b) => String(a.group).localeCompare(String(b.group), "ru") || String(a.name).localeCompare(String(b.name), "ru")); return `<div class="bb-card"><h2 class="bb-section-title">Добавить упражнение в эту тренировку</h2><p class="bb-muted bb-small" style="margin-bottom:10px;">Выбирай любое упражнение из базы. Например, в день плеч можно добавить трицепс или суперсет.</p><div class="bb-add-row"><select id="bb-workout-exercise-picker" class="bb-select"><option value="">Выбери упражнение</option>${sortedLib.map((item) => `<option value="${esc(item.id)}">${esc(item.group || "Другое")} — ${esc(item.name)}</option>`).join("")}</select><button class="bb-btn bb-primary" onclick="bbAddSelectedExerciseToWorkout()">Добавить</button></div></div>`; }
+  function workoutExercisePicker() { const lib = state.exerciseLibrary.slice().sort((a, b) => String(a.group).localeCompare(String(b.group), "ru") || String(a.name).localeCompare(String(b.name), "ru")); return `<div class="bb-card"><h2 class="bb-section-title">Добавить упражнение</h2><p class="bb-muted bb-small" style="margin-bottom:10px;">Можно добавить любое упражнение из базы в текущий день.</p><div class="bb-add-row"><select id="bb-workout-exercise-picker" class="bb-select"><option value="">Выбери упражнение из базы</option>${lib.map((item) => `<option value="${esc(item.id)}">${esc(item.group || "Другое")} — ${esc(item.name)}</option>`).join("")}</select><button class="bb-btn bb-primary" onclick="bbAddSelectedExerciseToWorkout()">Добавить</button></div></div>`; }
 
   function renderAuth() { return `<div class="bb-wrap"><div class="bb-card bb-hero"><div class="bb-title">Bodybuilding Control Center</div><div class="bb-subtitle">Личный кабинет: каждый аккаунт хранит свои тренировки, замеры и питание отдельно.</div></div><div class="bb-card" style="max-width:520px;margin:0 auto;"><h2 class="bb-section-title">Вход</h2>${fb.error ? `<div class="bb-log-ex" style="border-color:#ef4444;color:#fecaca;margin-bottom:12px;">${esc(fb.error)}</div>` : ""}${fb.loading ? `<p class="bb-muted">Загружаю Firebase...</p>` : `<button class="bb-btn bb-primary" style="width:100%;margin-bottom:12px;" onclick="bbLoginGoogle()">Войти через Google</button><div class="bb-field" style="margin-bottom:10px;"><label>Email</label><input id="bb-auth-email" class="bb-input" type="email" placeholder="you@gmail.com"></div><div class="bb-field" style="margin-bottom:12px;"><label>Пароль</label><input id="bb-auth-password" class="bb-input" type="password" placeholder="минимум 6 символов"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="bb-btn bb-primary" onclick="bbLoginEmail('login')">Войти</button><button class="bb-btn" onclick="bbLoginEmail('register')">Создать аккаунт</button></div>`}</div></div>`; }
   function renderDashboard() { const total = sumNutrition(); const lw = latestWeight(); const wt = weightTrend(); const goal = n(state.settings.goalWeight) || 100; const left = Math.max(0, goal - lw); const weeks = wt > 0 ? left / wt : null; const latestMeasure = sorted(state.measurements).at(-1); return `<div class="bb-grid3"><div class="bb-card span2"><h2 class="bb-section-title">Куда движемся</h2><p class="bb-muted">Прогноз по реальной динамике веса. Если записей мало — по плановому темпу.</p><div class="bb-grid" style="margin-top:14px;">${forecast("Через неделю", fmt(lw + wt) + " кг", fmt(wt) + " кг/нед")}${forecast("Через месяц", fmt(lw + wt * 4.3) + " кг", "≈ 30 дней")}${forecast("Через 3 месяца", fmt(lw + wt * 12.9) + " кг", "≈ 90 дней")}${forecast("До цели", weeks ? fmt(weeks, 0) + " нед" : "—", fmt(left) + " кг осталось")}</div></div><div class="bb-card"><h2 class="bb-section-title">Настройки цели</h2>${setting("currentWeight", "Текущий вес", "кг")}${setting("goalWeight", "Цель", "кг")}${setting("desiredWeeklyGain", "Плановый темп", "кг/нед")}<button class="bb-btn" style="margin-top:8px;color:#fca5a5;" onclick="bbResetMyData()">Сбросить мой аккаунт</button></div><div class="bb-card"><h2 class="bb-section-title">Сегодня</h2><div class="bb-field"><label>Дата</label>${datePicker("main", state.date)}</div><div class="bb-field" style="margin-top:10px;"><label>Тренировка</label><select class="bb-select" onchange="bbSelectDay(this.value)">${PROGRAM.map((day) => `<option value="${day.id}" ${day.id === state.dayId ? "selected" : ""}>${esc(day.title)}</option>`).join("")}</select></div><button class="bb-btn bb-primary" style="width:100%;margin-top:12px;" onclick="bbSetTab('log')">Открыть тренировку</button></div><div class="bb-card span2"><h2 class="bb-section-title">Рацион сейчас</h2><div class="bb-grid">${macro("Калории", Math.round(total.kcal), "ккал")}${macro("Белок", fmt(total.p, 0), "г")}${macro("Углеводы", fmt(total.c, 0), "г")}${macro("Жиры", fmt(total.f, 0), "г")}</div></div><div class="bb-card"><h2 class="bb-section-title">Последние замеры</h2>${latestMeasure ? `<div class="bb-grid2"><div class="bb-log-ex"><span class="bb-muted bb-small">Талия</span><br><b>${esc(latestMeasure.waistNavel || "—")} см</b></div><div class="bb-log-ex"><span class="bb-muted bb-small">Рука</span><br><b>${esc(latestMeasure.armFlexed || "—")} см</b></div><div class="bb-log-ex"><span class="bb-muted bb-small">Грудь</span><br><b>${esc(latestMeasure.chest || "—")} см</b></div><div class="bb-log-ex"><span class="bb-muted bb-small">Дата</span><br><b>${esc(latestMeasure.date)}</b></div></div>` : `<p class="bb-muted">Сделай первые замеры.</p>`}</div></div>`; }
